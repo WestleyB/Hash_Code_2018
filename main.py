@@ -6,7 +6,7 @@ from datetime import datetime
 from scipy.spatial.distance import cityblock
 
 
-class Counter:
+class Stepper:
     def __init__(self, low, high):
         self.current = low
         self.high = high
@@ -48,8 +48,11 @@ class Vehicule:
     def display(self):
         print('- Locate at ({}, {}) free at step : {}'.format(self._x, self._y, self.latest_finish))
 
+    def get_rides(self):
+        return self.rides_affected
 
-class Grid(Vehicule, Counter):
+
+class Grid(Vehicule, Stepper):
     """
     Grid
     """
@@ -58,9 +61,8 @@ class Grid(Vehicule, Counter):
         self.load_input()
         self.R, self.C, self.F, self.N, self.B, self.T = map(int, self.dataraw.iloc[0].tolist())
         self.rides = self.dataraw[1:]
-        # self._ride = Counter(1, self.N)
         self.fleet = dict.fromkeys(list(range(self.F)), Vehicule())
-        # self.step = Counter(1, self.T)
+        # self.step = Stepper(1, self.T)
         self.step = 1
         self.mtx = np.zeros((self.N, self.F))
         self.mask = np.zeros((self.N,self.F))
@@ -78,7 +80,7 @@ class Grid(Vehicule, Counter):
         a_example.in
         b_should_be_easy.in
         """
-        self.dataraw = pd.read_csv("b_should_be_easy.in", sep=" ", header=None)
+        self.dataraw = pd.read_csv("a_example.in", sep=" ", header=None)
 
     def print_param(self):
         print('\n------ Parameters ------')
@@ -93,8 +95,8 @@ class Grid(Vehicule, Counter):
 
     def print_car(self):
         print("\n------ [step {}] Fleet ------".format(self.step))
-        # for car in self.fleet:
-        for car in range(0, 50, 10):
+        for car in self.fleet:
+        # for car in range(0, 50, 10):
             print(' [{}] '.format(car), end='', flush=True)
             self.fleet[car].display()
 
@@ -105,37 +107,39 @@ class Grid(Vehicule, Counter):
             print('end')
 
     def compute(self):
-        start = time()
+        start = time.time()
         print("\n------ [step {}] Computing ------".format(self.step))
         affectations = []
-        mtxm = ma.masked_array(self.mtx, mask=self.mask)
 
+        print(self.mtx)
         for _ride in range(self._ride_tmp, self.N):
 
             mtxm = ma.masked_array(self.mtx, mask=self.mask)
+            print(mtxm)
             veh = np.argmax(mtxm[_ride])
-
-            self.fleet[veh].rides_affected.append(_ride)
-            self.fleet[veh].last_ride_duration = self.rides[_ride]['f'] - self.rides[_ride]['s']
-            self.fleet[veh].latest_finish = self.rides[_ride]['f']
-            self.fleet[veh].move(self.rides[_ride]['x'], self.rides[_ride]['y'])
-            self.mask[:, veh] = 1
-
-            # print('{} : {}'.format(_ride, veh))
-
-            if len(affectations) == self.F:
-                self.mask[_ride + 1:,:] = 0
-                self._ride_tmp = _ride + 1
-                print('All cars affected !!')
-                break 
+            if veh > 0 :
+                affectations.append(veh)
+                self.fleet[veh].rides_affected.append(_ride)
+                self.fleet[veh].last_ride_duration = self.rides[_ride]['f'] - self.rides[_ride]['s']
+                self.fleet[veh].latest_finish = self.rides[_ride]['f']
+                self.fleet[veh].move(self.rides[_ride]['x'], self.rides[_ride]['y'])
+                self.mask[:, veh] = 1
+                # print('{} : {}'.format(_ride, veh))
+                self.mask[_ride, :] = 1
+            else:
+                break
 
             for car in self.fleet:
                 if self.fleet[car].latest_finish >= self.step:
                     self.mask[:, car] = 0
-        
-        mtxm = ma.masked_array(self.mtx, mask=self.mask)
-        print(mtxm.shape)
-        print(time() - start)
+
+            if len(affectations) == self.F:
+                # self.mask[_ride + 1:,:] = 0
+                self._ride_tmp = _ride + 1
+                print('\nAll cars affected !!')
+                break 
+
+        print(time.time() - start)
 
     def compute_earn(self, ride, car):
         distance = ride['f'] - ride['s']
@@ -156,14 +160,10 @@ class Grid(Vehicule, Counter):
         print('\n------ Writing output ------')
         output = open('submission_{}.csv'.format(datetime.now().strftime('%Y%m%d_%H%M%S')), 'w')
         for veh in self.fleet:
-            output.writelines(' '.join(self.fleet[veh].rides_affected()))
+            print(self.fleet[veh].get_rides())
+            output.writelines(' '.join(str(r) for r in self.fleet[veh].get_rides()))
         output.close()
 
-"""
-{1: {'a': 0, 'b': 0, 'f': 9, 's': 2, 'x': 1, 'y': 3},
- 2: {'a': 1, 'b': 2, 'f': 9, 's': 0, 'x': 1, 'y': 0},
- 3: {'a': 2, 'b': 0, 'f': 9, 's': 0, 'x': 2, 'y': 2}}
-"""
 
 if __name__ == "__main__":
     # execute simulation
@@ -175,7 +175,7 @@ if __name__ == "__main__":
     # grid.compute()
     # grid.print_car()
 
-    for stp in range(1, 25000):
+    for stp in range(1, 10 + 1): # 25000
         grid.step = stp
         grid.compute_priority()
         grid.compute()

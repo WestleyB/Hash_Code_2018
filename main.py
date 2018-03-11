@@ -4,6 +4,7 @@ import numpy.ma as ma
 import time
 from datetime import datetime
 from scipy.spatial.distance import cityblock
+import logging
 
 
 class Stepper:
@@ -21,10 +22,13 @@ class Stepper:
             self.current += 1
             return self.current - 1
 
+    def update(self, goto):
+        self.current = goto
+
 
 class Rider:
     """
-    Riders disponibles
+    Riders
     """
     def __init__(self):
         self._x = 0
@@ -60,13 +64,19 @@ class Grid(Rider, Stepper):
     Map
     """
     def __init__(self):
+        """
+        a_example.in
+        b_should_be_easy.in
+        c_no_hurry.in
+        """
         print("\n------ Initialise ------")
+        self.filename = "data/b_should_be_easy.in"
         self.load_input()
         self.R, self.C, self.F, self.N, self.B, self.T = map(int, self.dataraw.iloc[0].tolist())
         self.rides = self.dataraw[1:]
         # self.fleet = dict.fromkeys(list(range(self.F)), Rider())
         self.fleet = { key : Rider() for key in list(range(self.F)) }
-        # self.step = Stepper(0, self.T)
+        self.stepper = Stepper(0, self.T - 1)
         self.step = 0
         self.mtx = np.zeros((self.N, self.F))
         self.mask_riders = np.zeros((self.N,self.F))
@@ -83,11 +93,11 @@ class Grid(Rider, Stepper):
         N – number of rides (1 ≤ N ≤ 10000)
         B – per-ride bonus for starting the ride on time (1 ≤ B ≤ 10000)
         T – number of steps in the simulation (1 ≤ T ≤ 109)
-
-        a_example.in
-        b_should_be_easy.in
         """
-        self.dataraw = pd.read_csv("b_should_be_easy.in", sep=" ", header=None)
+        self.dataraw = pd.read_csv(self.filename, sep=" ", header=None)
+
+    def next(self):
+        self.step = self.stepper.__next__()
 
     def print_param(self):
         print('\n------ Parameters ------')
@@ -118,7 +128,7 @@ class Grid(Rider, Stepper):
 
         for _ride in range(self._ride_tmp, self.N):
 
-            print(" [x] Compute ride #{} ............ ".format(_ride), end='', flush=True)
+            # print(" [x] Compute ride #{} ............ ".format(_ride), end='', flush=True)
             mtxm_1 = ma.masked_array(self.mtx, mask=self.mask_riders)
             mtxm_2 = ma.masked_array(mtxm_1, mask=self.mask_rides)
             mtxm_3 = ma.masked_where(mtxm_2 < 0, mtxm_2)
@@ -131,9 +141,9 @@ class Grid(Rider, Stepper):
                 self.fleet[veh].move(self.rides[_ride]['x'], self.rides[_ride]['y'])
                 self.mask_riders[:, veh] = 1
                 self.mask_rides[_ride, :] = 1
-                print('affected to rider #{} ({}:{})'.format(veh, self.fleet[veh]._x, self.fleet[veh]._y), flush=False)
+                # print('affected to rider #{} ({}:{})'.format(veh, self.fleet[veh]._x, self.fleet[veh]._y), flush=False)
             else:
-                print('no riders available', flush=False)
+                # print('no riders available', flush=False)
                 pass
 
             if _ride >= self.N:
@@ -142,10 +152,19 @@ class Grid(Rider, Stepper):
 
     def check_availability(self):
         print("\n------ [step {}] Checking availability ------".format(self.step))
+        step_tmp = 999999999999
         for car in self.fleet:
-            if self.fleet[car].get_availability() <= self.step:
+            preview_step = self.fleet[car].get_availability()
+            if preview_step <= self.step:
                 self.mask_riders[:, car] = 0
-                print(' [{}] arrived to ({}:{}) at step {}'.format(car, self.fleet[car]._x, self.fleet[car]._y, self.fleet[car].get_availability()))
+                # print(' [{}] arrived to ({}:{}) at step {}'.format(car, self.fleet[car]._x, self.fleet[car]._y, preview_step))
+
+        # Avance rapide (0.6s -> 0.8s )
+            if preview_step > self.step and preview_step < step_tmp and preview_step != 0:
+                # print(preview_step)
+                step_tmp = preview_step
+        # print('>>>>> Go To step {}'.format(step_tmp))
+        self.stepper.update(step_tmp if step_tmp < 999999999999 else self.step + 1)
 
     def compute_earn(self, ride, car):
         distance = ride['f'] - ride['s']
@@ -159,26 +178,36 @@ class Grid(Rider, Stepper):
 
     def submission(self):
         print('\n------ Writing output ------')
-        output = open('submission_{}.csv'.format(datetime.now().strftime('%Y%m%d_%H%M%S')), 'w')
+        total_rides = 0
+        output = open('submissions/{}_submission_{}.csv'.format(self.filename[:1], datetime.now().strftime('%Y%m%d_%H%M%S')), 'w')
         for veh in self.fleet:
-            print(self.fleet[veh].get_rides())
-            output.write(str(len(self.fleet[veh].get_rides())) + ' ' + ' '.join(str(r) for r in self.fleet[veh].get_rides()) + '\n')
+            _rides = self.fleet[veh].get_rides()
+            total_rides += len(_rides)
+            print(_rides)
+            output.write(str(len(_rides)) + ' ' + ' '.join(str(r) for r in _rides) + '\n')
         output.close()
+        print('\nTotal rides {}'.format(total_rides))
 
 
 if __name__ == "__main__":
     start = time.time()
+
     # execute simulation
     grid = Grid()
     grid.print_param()
     grid.print_car()
 
-    for stp in range(0, 25000):
-        grid.check_availability()
-        grid.compute_priority()
-        grid.compute()
-        grid.print_car()
-        grid.step += 1
+    while True:
+         try:
+            grid.check_availability()
+            grid.next()
+            grid.compute_priority()
+            grid.compute()
+            # grid.print_car()
+            if grid.step >= grid.T:
+                break
+         except StopIteration:
+             break
 
     grid.submission()
     print('\nExecution finished in {:.2f}s'.format(time.time() - start))
